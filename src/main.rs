@@ -1,5 +1,6 @@
 // use std::error::Error;
 
+mod auth;
 mod proto;
 
 // use bluer::{
@@ -139,5 +140,9 @@ async fn main() -> anyhow::Result<()> {
     ];
     let packet = proto::Packet::try_from(data)?;
     println!("{:?}", packet);
+
+    let code = auth::genrand();
+    let result = auth::checkcode(code, auth::encodecode(code));
+    println!("Checkcode result: {}", result);
     Ok(())
 }
