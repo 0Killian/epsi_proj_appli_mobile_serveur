@@ -1,3 +1,6 @@
+use tokio::io::AsyncRead;
+use tokio::io::AsyncReadExt;
+
 const SIGNATURE: u64 = 0x74DE3F8276ABC849;
 
 #[repr(u8)]
@@ -26,18 +29,24 @@ impl TryFrom<u8> for PacketType {
 #[derive(Debug)]
 enum PacketData {
     Hello {
-        Challenge: u32,
+        challenge: u32,
+        session_id: u64,
+        // Raw representation:
+        // | challenge (4 bytes) | session_id (8 bytes) |
     },
     Login {
-        Username: String,
-        Password: String,
-        Challenge: u32,
+        username: String,
+        password: String,
+        challenge: u32,
+        session_id: u64,
+        // Raw representation:
+        // | challenge (4 bytes) | username_length (1 byte) | password_length (1 byte) | session_id (8 bytes) | username (variable length) | password (variable length) |
     },
-    LoginSuccess {
-        SessionId: u64,
-    },
+    LoginSuccess {},
     LoginFailure {
-        Reason: String,
+        reason: String,
+        // Raw representation:
+        // | reason_length (1 byte) | reason (variable length) |
     },
 }
 
@@ -50,68 +59,70 @@ pub struct Packet {
     data: PacketData,
 }
 
-impl Packet {}
-
-impl TryFrom<Vec<u8>> for Packet {
-    type Error = anyhow::Error;
-
-    fn try_from(data: Vec<u8>) -> anyhow::Result<Self> {
-        if data.len() < 21 {
-            return Err(anyhow::anyhow!("Packet is too short"));
-        }
-
-        let signature = u64::from_le_bytes(data[0..8].try_into()?);
+impl Packet {
+    pub async fn read_from<R>(reader: &mut R) -> anyhow::Result<Self>
+    where
+        R: AsyncRead + Unpin,
+    {
+        // Read base packet fields
+        let signature = reader.read_u64_le().await?;
         if signature != SIGNATURE {
             return Err(anyhow::anyhow!("Invalid packet signature"));
         }
 
-        let length = u32::from_le_bytes(data[8..12].try_into()?);
-        if data.len() < length as usize + 21 {
-            return Err(anyhow::anyhow!("Packet is too short"));
-        }
+        println!("Signature: {:?}", signature);
 
-        let hash = u64::from_le_bytes(data[12..20].try_into()?);
+        let length = reader.read_u32_le().await?;
+        println!("Length: {:?}", length);
 
-        let packet_type = PacketType::try_from(data[20])?;
+        let hash = reader.read_u64_le().await?;
+        println!("Hash: {:?}", hash);
 
-        println!("Signature: {:x}", signature);
-        println!("Length: {}", length);
-        println!("Hash: {:x}", hash);
+        let packet_type = PacketType::try_from(reader.read_u8().await?)?;
         println!("Packet type: {:?}", packet_type);
+
+        // Read type-specific data
+        let mut inner_data = Vec::with_capacity(length as usize);
+        reader
+            .take(length as u64)
+            .read_to_end(&mut inner_data)
+            .await?;
+        println!("Inner data: {:?}", inner_data);
 
         let data = match packet_type {
             PacketType::Hello => {
                 anyhow::bail!("Hello is only sent by the server");
             }
             PacketType::Login => {
-                if length < 8 {
-                    return Err(anyhow::anyhow!("Packet is too short"));
-                }
+                let mut reader = inner_data.as_slice();
+                let challenge = reader.read_u32_le().await?;
+                println!("Challenge: {:?}", challenge);
+                let username_length = reader.read_u8().await?;
+                println!("Username length: {:?}", username_length);
+                let password_length = reader.read_u8().await?;
+                println!("Password length: {:?}", password_length);
+                let session_id = reader.read_u64_le().await?;
+                println!("Session ID: {:?}", session_id);
 
-                let challenge = u32::from_le_bytes(data[21..25].try_into()?);
-                let username_length = u8::from_le_bytes(data[25..26].try_into()?);
-                let password_length = u8::from_le_bytes(data[26..27].try_into()?);
+                let mut username = Vec::with_capacity(username_length.into());
+                AsyncReadExt::take(reader, username_length as u64)
+                    .read_to_end(&mut username)
+                    .await?;
+                let username = String::from_utf8(username)?;
+                println!("Username: {:?}", username);
 
-                println!("Challenge: {}", challenge);
-                println!("Username length: {}", username_length);
-                println!("Password length: {}", password_length);
-
-                if length < 6u32 + username_length as u32 + password_length as u32 {
-                    return Err(anyhow::anyhow!("Packet is too short"));
-                }
-
-                let username =
-                    String::from_utf8(data[21 + 6..21 + 6 + username_length as usize].to_vec())?;
-                let password = String::from_utf8(
-                    data[21 + 6 + username_length as usize
-                        ..21 + 6 + username_length as usize + password_length as usize]
-                        .to_vec(),
-                )?;
+                let mut password = Vec::with_capacity(password_length.into());
+                AsyncReadExt::take(reader, password_length as u64)
+                    .read_to_end(&mut password)
+                    .await?;
+                let password = String::from_utf8(password)?;
+                println!("Password: {:?}", password);
 
                 PacketData::Login {
-                    Username: username,
-                    Password: password,
-                    Challenge: challenge,
+                    username,
+                    password,
+                    challenge,
+                    session_id,
                 }
             }
             PacketType::LoginSuccess => {
@@ -122,8 +133,12 @@ impl TryFrom<Vec<u8>> for Packet {
             }
         };
 
-        // ...
-        Ok(Packet { length, hash, data })
+        Ok(Packet {
+            // ...
+            length,
+            hash,
+            data,
+        })
     }
 }
 
