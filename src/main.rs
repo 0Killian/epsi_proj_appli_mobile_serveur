@@ -1,15 +1,18 @@
-use std::error::Error;
+// use std::error::Error;
 
-use bluer::{
-    adv::Advertisement,
-    gatt::local::{
-        Application, CharacteristicNotifyMethod, CharacteristicWrite, CharacteristicWriteMethod,
-        Service,
-    },
-};
-use std::sync::{Arc, Mutex};
+mod proto;
 
-#[tokio::main]
+// use bluer::{
+//     adv::Advertisement,
+//     gatt::local::{
+//         Application, CharacteristicNotifyMethod, CharacteristicWrite, CharacteristicWriteMethod,
+//         Service,
+//     },
+// };
+// use std::sync::{Arc, Mutex};
+
+// #[tokio::main]
+/*
 async fn main() -> Result<(), Box<dyn Error>> {
     // Connect to the bluetooth daemon
     let session = bluer::Session::new().await?;
@@ -123,5 +126,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     println!("Stopping service...");
 
+    Ok(())
+}
+*/
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    //let packet = proto::Packet::new()?;
+    let data = vec![
+        0x49, 0xC8, 0xAB, 0x76, 0x82, 0x3F, 0xDE, 0x74, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x02, 0x03, 0x01, 0x01, 'a' as u8,
+        'b' as u8,
+    ];
+    let packet = proto::Packet::try_from(data)?;
+    println!("{:?}", packet);
     Ok(())
 }
