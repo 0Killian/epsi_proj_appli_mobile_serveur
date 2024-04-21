@@ -8,5 +8,6 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.81"
 rand = "0.8.5"
-# bluer = { version = "0.17.0", features = ["full"] }
+bluer = { version = "0.17.0", features = ["full"] }
 tokio = { version = "1.36.0", features = ["full"] }
+futures = "0.3.30"
